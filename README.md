@@ -66,6 +66,19 @@ stop.bat       :: 停止（连同 PostgreSQL 子进程）
 | POST | `/v1/semantic/chunks` | 写入/替换某个规则身份的索引分块 |
 | POST | `/v1/object-scopes/resolve` | 物资类型别名解析 |
 
+## 验证
+
+```bat
+run-e2e.bat
+```
+
+一条端到端链路：起独立实例（临时数据目录、随机端口）→ 导入 fixture 规则 →
+校验索引/目录/取正文/语义检索命中 → 重复导入验证幂等 → 关停清理。
+每次运行在 `artifacts/` 留一份 JSON 报告，逐项记录检查结果与耗时。
+
+需要嵌入服务（读 `.env`）；没有 `TSR_EMBEDDING_API_KEY` 时脚本以退出码 2 跳过，
+不会误报通过。约 20–30 秒，其中大半是首次 `initdb`。
+
 ## 安全模型
 
 - 默认只绑 `127.0.0.1`，外部不可达。
