@@ -1,0 +1,1131 @@
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.66@51801b51069b2578c3fcf6d38edc45c45efd8b7ef4fdb25f096bd84d4f95a53d
+    version: null
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/parentchild_chunker:0.0.14@91db2a8071612bcbeda9fa5d72386bbdb9e1a83ac6c3d40bbb01853a9df353ce
+    version: null
+kind: rag_pipeline
+rag_pipeline:
+  description: 技术规范书审查规则正式知识库。支持两类规则资产：①对象/章节专业审查规则（structure/chapter）；②通用或对象级基础检查规则（basic_structure/basic）。上传后统一激活、清理核准提示与来源追溯，自动识别
+    rule_domain，将完整权威正文分别发布到 PostgreSQL Rule Registry 对应接口，发布成功后再注入隐藏 ROUTE 标签进入 Dify
+    父子分块与向量索引。
+  icon: 📘
+  icon_background: '#E8F5E9'
+  icon_type: emoji
+  icon_url: null
+  name: 技术规范书审查规则知识库（双规则域） 1
+version: 0.1.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features: {}
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: datasource
+        targetType: document-extractor
+      id: rule_file-source-extract_markdown-target
+      source: rule_file
+      sourceHandle: source
+      target: extract_markdown
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: document-extractor
+        targetType: code
+      id: extract_markdown-source-clean_rule-target
+      source: extract_markdown
+      sourceHandle: source
+      target: clean_rule
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: tool
+        targetType: knowledge-index
+      id: parent_child_chunk-source-knowledge_index-target
+      source: parent_child_chunk
+      sourceHandle: source
+      target: knowledge_index
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: code
+      id: clean_rule-source-build_registry_payload-target
+      source: clean_rule
+      sourceHandle: source
+      target: build_registry_payload
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: http-request
+      id: build_registry_payload-source-publish_registry-target
+      source: build_registry_payload
+      sourceHandle: source
+      target: publish_registry
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: code
+      id: publish_registry-source-validate_registry_publish-target
+      source: publish_registry
+      sourceHandle: source
+      target: validate_registry_publish
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: tool
+      id: validate_registry_publish-source-parent_child_chunk-target
+      source: validate_registry_publish
+      sourceHandle: source
+      target: parent_child_chunk
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        datasource_configurations: {}
+        datasource_label: File
+        datasource_name: upload-file
+        datasource_parameters: {}
+        fileExtensions:
+        - md
+        - markdown
+        plugin_id: langgenius/file
+        provider_name: file
+        provider_type: local_file
+        selected: false
+        title: 上传审查规则 Markdown
+        type: datasource
+      height: 51
+      id: rule_file
+      position:
+        x: -700
+        y: 260
+      positionAbsolute:
+        x: -700
+        y: 260
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        is_array_file: false
+        selected: false
+        title: 提取 Markdown
+        type: document-extractor
+        variable_selector:
+        - rule_file
+        - file
+      height: 104
+      id: extract_markdown
+      position:
+        x: -390
+        y: 260
+      positionAbsolute:
+        x: -390
+        y: 260
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        code: "import re\n\n\nNAV_SOFT_LIMIT = 800\n\n\ndef _remove_source_trace_section(text:\
+          \ str) -> str:\n    \"\"\"删除标题为“来源追溯”的章节及其全部下级内容。\"\"\"\n    lines = (text\
+          \ or \"\").splitlines()\n    out = []\n    i = 0\n\n    while i < len(lines):\n\
+          \        stripped = lines[i].strip()\n        match = re.match(r\"^(#{1,6})\\\
+          s*来源追溯\\s*$\", stripped)\n\n        if not match:\n            out.append(lines[i])\n\
+          \            i += 1\n            continue\n\n        level = len(match.group(1))\n\
+          \        i += 1\n\n        # 跳过本节内容，直到遇到同级或更高级标题；若无则删除到文末。\n        while\
+          \ i < len(lines):\n            heading = re.match(r\"^(#{1,6})\\s+\\S\"\
+          , lines[i].lstrip())\n            if heading and len(heading.group(1)) <=\
+          \ level:\n                break\n            i += 1\n\n        while out\
+          \ and not out[-1].strip():\n            out.pop()\n\n    return \"\\n\"\
+          .join(out)\n\n\ndef _is_heading_only(block: str) -> bool:\n    lines = [line.strip()\
+          \ for line in block.splitlines() if line.strip()]\n    return len(lines)\
+          \ == 1 and bool(re.match(r\"^#{1,6}\\s+\\S\", lines[0]))\n\n\ndef _is_structure_rule(text:\
+          \ str) -> bool:\n    \"\"\"识别“00 全文章节结构规则”。\"\"\"\n    first_h1 = re.search(r\"\
+          (?m)^#\\s+(.+)$\", text or \"\")\n    if first_h1 and \"全文章节结构\" in first_h1.group(1):\n\
+          \        return True\n    return bool(\n        re.search(r\"(?m)^##\\s*标准章节树及内容规则导航\\\
+          s*$\", text or \"\")\n    )\n\n\ndef _prepare_normal_rule_chunks(text: str)\
+          \ -> str:\n    \"\"\"普通章节规则：按审查语义单元切子块。\"\"\"\n    lines = (text or \"\"\
+          ).splitlines()\n    blocks = []\n    current = []\n    in_fence = False\n\
+          \    fence_mark = None\n\n    def flush():\n        nonlocal current\n \
+          \       if current:\n            block = \"\\n\".join(current).strip()\n\
+          \            if block:\n                blocks.append(block)\n         \
+          \   current = []\n\n    for raw_line in lines:\n        line = raw_line.rstrip()\n\
+          \        stripped = line.strip()\n\n        if stripped.startswith(\"```\"\
+          ) or stripped.startswith(\"~~~\"):\n            mark = stripped[:3]\n  \
+          \          if not in_fence:\n                in_fence = True\n         \
+          \       fence_mark = mark\n            elif fence_mark == mark:\n      \
+          \          in_fence = False\n                fence_mark = None\n       \
+          \     current.append(line)\n            continue\n\n        if in_fence:\n\
+          \            current.append(line)\n            continue\n\n        # 普通空行只承担排版，不作为语义切分依据。\n\
+          \        if not stripped:\n            continue\n\n        heading = re.match(r\"\
+          ^(#{1,6})\\s+(.+?)\\s*$\", stripped)\n        start_new = False\n\n    \
+          \    if heading:\n            level = len(heading.group(1))\n          \
+          \  title = heading.group(2).strip()\n\n            if level == 1:\n    \
+          \            start_new = bool(current)\n            elif level == 2:\n \
+          \               # 两个高度重复的通用尾部说明并入前一规则子块，降低检索噪声。\n                start_new\
+          \ = (\n                    False\n                    if title in {\"逐项审查方式\"\
+          , \"本章小结\"}\n                    else bool(current)\n                )\n\
+          \            elif level == 3:\n                # 主题 H2 与“本章应写明的要求”合并；其他\
+          \ H3 独立成块。\n                start_new = bool(current) and title != \"本章应写明的要求\"\
+          \n            else:\n                start_new = False\n\n        if start_new:\n\
+          \            flush()\n\n        current.append(line)\n\n    flush()\n\n\
+          \    # 标题不能成为无正文的低价值子块；自动向后合并。\n    merged = []\n    pending_headings =\
+          \ []\n    for block in blocks:\n        if _is_heading_only(block):\n  \
+          \          pending_headings.append(block)\n            continue\n\n    \
+          \    if pending_headings:\n            block = \"\\n\".join(pending_headings\
+          \ + [block])\n            pending_headings = []\n        merged.append(block)\n\
+          \n    if pending_headings:\n        if merged:\n            merged[-1] =\
+          \ merged[-1] + \"\\n\" + \"\\n\".join(pending_headings)\n        else:\n\
+          \            merged.extend(pending_headings)\n\n    return \"\\n\\n\".join(merged).rstrip()\
+          \ + \"\\n\"\n\n\ndef _table_cells(line: str):\n    \"\"\"解析简单 Markdown 表格行。规则导航表不允许单元格内再使用未转义竖线。\"\
+          \"\"\n    stripped = line.strip()\n    if not (stripped.startswith(\"|\"\
+          ) and stripped.endswith(\"|\")):\n        return None\n    return [cell.strip()\
+          \ for cell in stripped[1:-1].split(\"|\")]\n\n\ndef _top_number(number:\
+          \ str) -> str:\n    \"\"\"5.1 -> 5；6.3 -> 6。\"\"\"\n    number = (number\
+          \ or \"\").strip()\n    match = re.match(r\"^(\\d+)\", number)\n    return\
+          \ match.group(1) if match else number\n\n\ndef _is_integer_text(value: str)\
+          \ -> bool:\n    return bool(re.fullmatch(r\"\\d+\", str(value)))\n\n\ndef\
+          \ _range_text(values) -> str:\n    \"\"\"[1,2,3,4] -> 1–4；非连续值使用顿号。\"\"\"\
+          \n    unique = []\n    for value in values:\n        if value not in unique:\n\
+          \            unique.append(value)\n\n    if not unique:\n        return\
+          \ \"\"\n\n    if all(_is_integer_text(value) for value in unique):\n   \
+          \     numbers = [int(value) for value in unique]\n        if (\n       \
+          \     len(numbers) > 1\n            and numbers == list(range(numbers[0],\
+          \ numbers[-1] + 1))\n        ):\n            return f\"{numbers[0]}–{numbers[-1]}\"\
+          \n\n    return \"、\".join(unique)\n\n\ndef _nav_label(rows) -> str:\n  \
+          \  parsed = []\n    for row in rows:\n        cells = _table_cells(row)\n\
+          \        if cells and len(cells) >= 2:\n            parsed.append((cells[0],\
+          \ _top_number(cells[1])))\n\n    parts = []\n    for part, _ in parsed:\n\
+          \        if part not in parts:\n            parts.append(part)\n\n    if\
+          \ len(parts) == 1:\n        tops = [top for part, top in parsed if part\
+          \ == parts[0]]\n        return f\"{parts[0]} {_range_text(tops)}\".strip()\n\
+          \n    return \" / \".join(parts)\n\n\ndef _nav_block(header_lines, rows)\
+          \ -> str:\n    label = _nav_label(rows)\n    title = \"## 标准章节树及内容规则导航\"\
+          \n    if label:\n        title += f\"｜{label}\"\n    return \"\\n\".join([title]\
+          \ + header_lines + rows)\n\n\ndef _family_key(row):\n    \"\"\"按“部分 + 一级章节号”把\
+          \ 5 与 5.1~5.4 视为同一族。\"\"\"\n    cells = _table_cells(row)\n    if not cells\
+          \ or len(cells) < 2:\n        return (\"\", \"\")\n    return (cells[0],\
+          \ _top_number(cells[1]))\n\n\ndef _group_nav_rows(header_lines, rows, soft_limit:\
+          \ int = NAV_SOFT_LIMIT):\n    \"\"\"\n    导航表分组原则：\n    - 不跨“通用部分/专用部分”等部分混组；\n\
+          \    - 同一一级章及其二级章尽量保持完整；\n    - 按约 800 字符软上限打包，避免父子分块器的最大长度兜底在表格行中间硬切；\n\
+          \    - 每组重新带表头，使每个子块都可独立理解。\n    \"\"\"\n    families = []\n    current_family\
+          \ = []\n    current_key = None\n\n    for row in rows:\n        key = _family_key(row)\n\
+          \        if current_family and key != current_key:\n            families.append(current_family)\n\
+          \            current_family = []\n        current_family.append(row)\n \
+          \       current_key = key\n\n    if current_family:\n        families.append(current_family)\n\
+          \n    groups = []\n    pending = []\n\n    def block_size(group_rows):\n\
+          \        return len(_nav_block(header_lines, group_rows))\n\n    def flush_pending():\n\
+          \        nonlocal pending\n        if pending:\n            groups.append(pending)\n\
+          \            pending = []\n\n    for family in families:\n        family_part\
+          \ = _family_key(family[0])[0] if family else \"\"\n        pending_part\
+          \ = _family_key(pending[0])[0] if pending else \"\"\n\n        # 不跨“部分”打包。\n\
+          \        if pending and family_part != pending_part:\n            flush_pending()\n\
+          \n        # 极端情况下单个一级章族本身过长，则只按完整表格行拆，绝不从行中间切。\n        if block_size(family)\
+          \ > soft_limit:\n            flush_pending()\n            row_group = []\n\
+          \            for row in family:\n                if row_group and block_size(row_group\
+          \ + [row]) > soft_limit:\n                    groups.append(row_group)\n\
+          \                    row_group = []\n                row_group.append(row)\n\
+          \            if row_group:\n                groups.append(row_group)\n \
+          \           continue\n\n        if pending and block_size(pending + family)\
+          \ > soft_limit:\n            flush_pending()\n\n        pending.extend(family)\n\
+          \n    flush_pending()\n    return groups\n\n\ndef _prepare_structure_rule_chunks(text:\
+          \ str) -> str:\n    \"\"\"\n    “00 全文章节结构规则”专用分块：\n    1. H1 + 规则身份为一块；\n\
+          \    2. “标准章节树及内容规则导航”表按部分/一级章族分组，每块复制表头；\n    3. “结构判定口径”及其后续标题约束整体保留；\n\
+          \    4. “执行台账”单独成块。\n    \"\"\"\n    lines = (text or \"\").splitlines()\n\
+          \n    nav_index = None\n    for index, line in enumerate(lines):\n     \
+          \   if re.match(\n            r\"^##\\s*标准章节树及内容规则导航\\s*$\",\n         \
+          \   line.strip(),\n        ):\n            nav_index = index\n         \
+          \   break\n\n    if nav_index is None:\n        return _prepare_normal_rule_chunks(text)\n\
+          \n    blocks = []\n\n    # 文档身份块。\n    pre_nav = [line.rstrip() for line\
+          \ in lines[:nav_index] if line.strip()]\n    if pre_nav:\n        blocks.append(\"\
+          \\n\".join(pre_nav).strip())\n\n    # 找到导航表章节结束位置。\n    nav_end = len(lines)\n\
+          \    for index in range(nav_index + 1, len(lines)):\n        if re.match(r\"\
+          ^##\\s+\\S\", lines[index].strip()):\n            nav_end = index\n    \
+          \        break\n\n    nav_lines = [\n        line.rstrip()\n        for\
+          \ line in lines[nav_index + 1 : nav_end]\n        if line.strip()\n    ]\n\
+          \    table_lines = [\n        line for line in nav_lines\n        if line.strip().startswith(\"\
+          |\") and line.strip().endswith(\"|\")\n    ]\n\n    if len(table_lines)\
+          \ >= 3:\n        header_lines = table_lines[:2]\n        data_rows = table_lines[2:]\n\
+          \        for group in _group_nav_rows(header_lines, data_rows):\n      \
+          \      blocks.append(_nav_block(header_lines, group))\n    else:\n     \
+          \   # 表结构异常时不丢内容，退化为完整导航章节。\n        nav_block = \"\\n\".join(\n       \
+          \     [lines[nav_index].strip()] + nav_lines\n        ).strip()\n      \
+          \  if nav_block:\n            blocks.append(nav_block)\n\n    # 尾部：结构判定相关内容合并；执行台账单独切出。\n\
+          \    tail_lines = [\n        line.rstrip() for line in lines[nav_end:] if\
+          \ line.strip()\n    ]\n    current = []\n\n    for line in tail_lines:\n\
+          \        heading = re.match(r\"^##\\s+(.+?)\\s*$\", line.strip())\n    \
+          \    title = heading.group(1).strip() if heading else None\n\n        if\
+          \ title == \"执行台账\":\n            if current:\n                blocks.append(\"\
+          \\n\".join(current).strip())\n                current = []\n           \
+          \ current.append(line)\n        else:\n            current.append(line)\n\
+          \n    if current:\n        blocks.append(\"\\n\".join(current).strip())\n\
+          \n    return \"\\n\\n\".join(block for block in blocks if block).rstrip()\
+          \ + \"\\n\"\n\n\n\ndef _line_value(text: str, field: str) -> str:\n    if\
+          \ not text:\n        return \"\"\n    m = re.search(\n        rf\"(?m)^\\\
+          s*[-*+]\\s*{re.escape(field)}\\s*[：:]\\s*(.*?)\\s*$\",\n        text,\n\
+          \    )\n    return m.group(1).strip() if m else \"\"\n\n\ndef _first_heading(text:\
+          \ str) -> str:\n    if not text:\n        return \"\"\n    m = re.search(r\"\
+          (?m)^\\s*#\\s+(.+?)\\s*$\", text)\n    return m.group(1).strip() if m else\
+          \ \"\"\n\n\ndef _known_document_role(text: str) -> str:\n    text = text\
+          \ or \"\"\n    for role in (\"采购技术规范书\", \"投标响应文件\", \"合同技术附件\"):\n    \
+          \    if role in text:\n            return role\n    return \"\"\n\n\ndef\
+          \ _clean_object_scope(value: str, role: str) -> str:\n    value = (value\
+          \ or \"\").strip()\n    if role and value.endswith(role):\n        value\
+          \ = value[: -len(role)]\n    value = re.sub(r\"[\\s｜|>]+$\", \"\", value).strip()\n\
+          \    return value\n\n\ndef _split_section_label(label: str):\n    label\
+          \ = (label or \"\").strip()\n    m = re.match(r\"^\\s*(\\d+(?:\\.\\d+)*)\\\
+          s*[\\.、:：\\-—]?\\s*(.*?)\\s*$\", label)\n    if not m:\n        return \"\
+          \", label\n    return m.group(1).strip(), m.group(2).strip()\n\n\n\ndef\
+          \ _derive_professional_identity(text: str) -> dict:\n    h1 = _first_heading(text)\n\
+          \    applicable_object = _line_value(text, \"适用对象\")\n    applicable_section\
+          \ = _line_value(text, \"适用审查章节\")\n\n    rule_kind = (_line_value(text,\
+          \ \"规则类型\") or \"\").strip().lower()\n    if not rule_kind:\n        rule_kind\
+          \ = \"structure\" if \"全文章节结构\" in h1 else \"chapter\"\n\n    document_role\
+          \ = (\n        _line_value(text, \"文档角色\")\n        or _known_document_role(applicable_object)\n\
+          \        or _known_document_role(h1)\n    )\n    if not document_role:\n\
+          \        document_role = \"未标明\"\n\n    object_scope = _line_value(text,\
+          \ \"对象范围\")\n    if not object_scope:\n        object_scope = _clean_object_scope(applicable_object,\
+          \ document_role)\n    if not object_scope:\n        object_scope = (h1.split(\"\
+          ｜\", 1)[0] if h1 else \"\").strip()\n\n    part = _line_value(text, \"所属部分\"\
+          )\n    section_number = _line_value(text, \"章节编号\")\n    section_title =\
+          \ _line_value(text, \"章节标题\")\n\n    if rule_kind == \"structure\":\n  \
+          \      part = part or \"全文\"\n        section_number = section_number or\
+          \ \"00\"\n        section_title = section_title or \"全文章节结构\"\n    else:\n\
+          \        path_parts = [\n            p.strip()\n            for p in re.split(r\"\
+          \\s*>\\s*\", applicable_section or \"\")\n            if p.strip()\n   \
+          \     ]\n        if not part and path_parts:\n            part = path_parts[0]\n\
+          \        if not part:\n            hparts = [p.strip() for p in h1.split(\"\
+          ｜\") if p.strip()]\n            if len(hparts) >= 2:\n                part\
+          \ = hparts[1]\n\n        last = path_parts[-1] if path_parts else \"\"\n\
+          \        n, t = _split_section_label(last)\n        section_number = section_number\
+          \ or n\n        section_title = section_title or t\n\n        if not section_number\
+          \ or not section_title:\n            hparts = [p.strip() for p in h1.split(\"\
+          ｜\") if p.strip()]\n            if len(hparts) >= 3:\n                hn,\
+          \ ht = _split_section_label(hparts[2])\n                section_number =\
+          \ section_number or hn\n                section_title = section_title or\
+          \ ht\n\n    part = (part or \"\").strip()\n    section_number = (section_number\
+          \ or \"\").strip()\n    section_title = (section_title or \"\").strip()\n\
+          \    object_scope = (object_scope or \"\").strip()\n\n    missing = []\n\
+          \    for key, value in (\n        (\"对象范围\", object_scope),\n        (\"\
+          所属部分\", part),\n        (\"章节编号\", section_number),\n        (\"章节标题\",\
+          \ section_title),\n        (\"规则类型\", rule_kind),\n    ):\n        if not\
+          \ value:\n            missing.append(key)\n    if missing:\n        raise\
+          \ ValueError(\"无法建立运行期章节规则身份，缺少：\" + \"、\".join(missing))\n\n    if rule_kind\
+          \ not in {\"structure\", \"chapter\"}:\n        raise ValueError(f\"章节规则的规则类型必须为\
+          \ structure/chapter，实际为：{rule_kind}\")\n\n    return {\n        \"rule_domain\"\
+          : \"chapter_review\",\n        \"object_scope\": object_scope,\n       \
+          \ \"document_role\": document_role,\n        \"part\": part,\n        \"\
+          section_number\": section_number,\n        \"section_title\": section_title,\n\
+          \        \"rule_kind\": rule_kind,\n        \"rule_status\": \"active\"\
+          ,\n        \"scope_level\": \"object\",\n        \"stage\": \"\",\n    \
+          \    \"rule_code\": \"\",\n        \"rule_title\": \"\",\n    }\n\n\ndef\
+          \ _derive_basic_identity(text: str) -> dict:\n    h1 = _first_heading(text)\n\
+          \    applicable_object = _line_value(text, \"适用对象\")\n    applicable_scope\
+          \ = _line_value(text, \"适用范围\")\n\n    document_role = (\n        _line_value(text,\
+          \ \"文档角色\")\n        or _known_document_role(applicable_object)\n      \
+          \  or _known_document_role(h1)\n        or \"采购技术规范书\"\n    )\n\n    rule_kind\
+          \ = (_line_value(text, \"规则类型\") or \"\").strip().lower()\n    rule_code\
+          \ = (_line_value(text, \"规则编号\") or \"\").strip()\n    rule_title = (_line_value(text,\
+          \ \"规则标题\") or \"\").strip()\n    stage = (_line_value(text, \"适用阶段\") or\
+          \ \"\").strip().lower()\n    object_scope = (_line_value(text, \"对象范围\"\
+          ) or \"\").strip()\n    explicit_scope_level = (\n        _line_value(text,\
+          \ \"作用层级\")\n        or _line_value(text, \"范围层级\")\n        or \"\"\n \
+          \   ).strip().lower()\n\n    if not rule_kind:\n        rule_kind = \"basic_structure\"\
+          \ if rule_code == \"B00\" else \"basic\"\n\n    if not stage and (rule_kind\
+          \ == \"basic_structure\" or rule_code == \"B00\"):\n        stage = \"index\"\
+          \n\n    allowed_stages = {\n        \"index\",\n        \"layout\",\n  \
+          \      \"text_quality\",\n        \"numbering_reference\",\n        \"consistency\"\
+          ,\n    }\n    if stage not in allowed_stages:\n        raise ValueError(\n\
+          \            \"基础规则缺少或包含无效“适用阶段”；允许值：\"\n            + \"、\".join(sorted(allowed_stages))\n\
+          \            + f\"；实际为：{stage or '空'}\"\n        )\n\n    if rule_kind not\
+          \ in {\"basic_structure\", \"basic\"}:\n        raise ValueError(\n    \
+          \        f\"基础规则的规则类型必须为 basic_structure/basic，实际为：{rule_kind}\"\n     \
+          \   )\n\n    if stage == \"index\" and rule_kind != \"basic_structure\"\
+          :\n        raise ValueError(\"基础规则 index 阶段必须使用 rule_kind=basic_structure。\"\
+          )\n    if stage != \"index\" and rule_kind != \"basic\":\n        raise\
+          \ ValueError(\"非 index 基础阶段必须使用 rule_kind=basic。\")\n\n    if not rule_code:\n\
+          \        raise ValueError(\"基础规则缺少“规则编号”。\")\n    if not rule_title:\n \
+          \       raise ValueError(\"基础规则缺少“规则标题”。\")\n\n    if explicit_scope_level:\n\
+          \        scope_level = explicit_scope_level\n    elif object_scope:\n  \
+          \      scope_level = \"object\"\n    else:\n        # 当前 B00~B04 为全部采购技术规范书通用基础规则。\n\
+          \        scope_level = \"global\"\n\n    if scope_level not in {\"global\"\
+          , \"object\"}:\n        raise ValueError(\n            f\"基础规则作用层级必须为 global/object，实际为：{scope_level}\"\
+          \n        )\n\n    if scope_level == \"global\":\n        object_scope =\
+          \ \"\"\n    elif not object_scope:\n        # 为未来 object 级基础规则保留一个可推导入口。\n\
+          \        candidate = _clean_object_scope(applicable_object, document_role)\n\
+          \        if candidate and candidate not in {\"通用\", \"所有已识别物资品类\"}:\n  \
+          \          object_scope = candidate\n        if not object_scope:\n    \
+          \        raise ValueError(\"object 级基础规则必须提供“对象范围”。\")\n\n    return {\n\
+          \        \"rule_domain\": \"basic_check\",\n        \"object_scope\": object_scope,\n\
+          \        \"document_role\": document_role,\n        \"part\": \"基础检查\",\n\
+          \        \"section_number\": \"\",\n        \"section_title\": \"\",\n \
+          \       \"rule_kind\": rule_kind,\n        \"rule_status\": \"active\",\n\
+          \        \"scope_level\": scope_level,\n        \"stage\": stage,\n    \
+          \    \"rule_code\": rule_code,\n        \"rule_title\": rule_title,\n  \
+          \  }\n\n\ndef _derive_identity(text: str) -> dict:\n    rule_domain = (_line_value(text,\
+          \ \"规则域\") or \"\").strip().lower()\n    rule_kind = (_line_value(text,\
+          \ \"规则类型\") or \"\").strip().lower()\n\n    if rule_domain == \"basic_check\"\
+          \ or rule_kind in {\"basic_structure\", \"basic\"}:\n        return _derive_basic_identity(text)\n\
+          \n    return _derive_professional_identity(text)\n\n\ndef _ensure_professional_identity_fields(text:\
+          \ str, identity: dict) -> str:\n    \"\"\"保持原有章节规则规范化行为，避免仅因升级 Pipeline\
+          \ 造成内容 Hash 变化。\"\"\"\n    lines = (text or \"\").splitlines()\n    h1_idx\
+          \ = None\n    h2_idx = len(lines)\n    for i, line in enumerate(lines):\n\
+          \        if h1_idx is None and re.match(r\"^#\\s+\\S\", line.strip()):\n\
+          \            h1_idx = i\n            continue\n        if h1_idx is not\
+          \ None and re.match(r\"^##\\s+\\S\", line.strip()):\n            h2_idx\
+          \ = i\n            break\n\n    if h1_idx is None:\n        raise ValueError(\"\
+          未检测到规则 H1 标题，已拒绝入库。\")\n\n    canonical_fields = {\n        \"对象范围\",\n\
+          \        \"文档角色\",\n        \"所属部分\",\n        \"章节编号\",\n        \"章节标题\"\
+          ,\n        \"规则类型\",\n    }\n    head = lines[: h1_idx + 1]\n    identity_zone\
+          \ = []\n    for line in lines[h1_idx + 1 : h2_idx]:\n        m = re.match(r\"\
+          ^\\s*[-*+]\\s*([^：:]+)\\s*[：:]\", line)\n        if m and m.group(1).strip()\
+          \ in canonical_fields:\n            continue\n        identity_zone.append(line)\n\
+          \n    canonical = [\n        f\"- 对象范围：{identity['object_scope']}\",\n \
+          \       f\"- 文档角色：{identity['document_role']}\",\n        f\"- 所属部分：{identity['part']}\"\
+          ,\n        f\"- 章节编号：{identity['section_number']}\",\n        f\"- 章节标题：{identity['section_title']}\"\
+          ,\n        f\"- 规则类型：{identity['rule_kind']}\",\n    ]\n\n    out = head\
+          \ + canonical + identity_zone + lines[h2_idx:]\n    return \"\\n\".join(out)\n\
+          \ndef _ensure_basic_identity_fields(text: str, identity: dict) -> str:\n\
+          \    \"\"\"规范基础规则机器身份字段；保留“适用范围/审查任务”等人工可读说明。\"\"\"\n    lines = (text or\
+          \ \"\").splitlines()\n    h1_idx = None\n    h2_idx = len(lines)\n    for\
+          \ i, line in enumerate(lines):\n        if h1_idx is None and re.match(r\"\
+          ^#\\s+\\S\", line.strip()):\n            h1_idx = i\n            continue\n\
+          \        if h1_idx is not None and re.match(r\"^##\\s+\\S\", line.strip()):\n\
+          \            h2_idx = i\n            break\n\n    if h1_idx is None:\n \
+          \       raise ValueError(\"未检测到基础规则 H1 标题，已拒绝入库。\")\n\n    canonical_fields\
+          \ = {\n        \"规则域\",\n        \"文档角色\",\n        \"所属部分\",\n        \"\
+          规则编号\",\n        \"规则标题\",\n        \"规则类型\",\n        \"适用阶段\",\n     \
+          \   \"对象范围\",\n        \"作用层级\",\n    }\n    head = lines[: h1_idx + 1]\n\
+          \    identity_zone = []\n    for line in lines[h1_idx + 1 : h2_idx]:\n \
+          \       m = re.match(r\"^\\s*[-*+]\\s*([^：:]+)\\s*[：:]\", line)\n      \
+          \  if m and m.group(1).strip() in canonical_fields:\n            continue\n\
+          \        identity_zone.append(line)\n\n    canonical = [\n        \"- 规则域：basic_check\"\
+          ,\n        f\"- 文档角色：{identity['document_role']}\",\n        \"- 所属部分：基础检查\"\
+          ,\n        f\"- 规则编号：{identity['rule_code']}\",\n        f\"- 规则标题：{identity['rule_title']}\"\
+          ,\n        f\"- 规则类型：{identity['rule_kind']}\",\n        f\"- 适用阶段：{identity['stage']}\"\
+          ,\n        f\"- 作用层级：{identity['scope_level']}\",\n    ]\n    if identity[\"\
+          scope_level\"] == \"object\":\n        canonical.append(f\"- 对象范围：{identity['object_scope']}\"\
+          )\n\n    out = head + canonical + identity_zone + lines[h2_idx:]\n    return\
+          \ \"\\n\".join(out)\n\n\ndef _ensure_identity_fields(text: str, identity:\
+          \ dict) -> str:\n    if identity[\"rule_domain\"] == \"basic_check\":\n\
+          \        return _ensure_basic_identity_fields(text, identity)\n    return\
+          \ _ensure_professional_identity_fields(text, identity)\n\n\ndef _route_comment(identity:\
+          \ dict) -> str:\n    if identity[\"rule_domain\"] == \"basic_check\":\n\
+          \        scope_piece = (\n            f\"object_scope={identity['object_scope']}\
+          \ | \"\n            if identity[\"scope_level\"] == \"object\"\n       \
+          \     else \"\"\n        )\n        return (\n            \"<!-- ROUTE:\
+          \ \"\n            \"rule_domain=basic_check | \"\n            f\"document_role={identity['document_role']}\
+          \ | \"\n            f\"scope_level={identity['scope_level']} | \"\n    \
+          \        f\"{scope_piece}\"\n            f\"stage={identity['stage']} |\
+          \ \"\n            f\"rule_code={identity['rule_code']} | \"\n          \
+          \  f\"rule_title={identity['rule_title']} | \"\n            f\"rule_kind={identity['rule_kind']}\
+          \ | \"\n            \"rule_status=active -->\"\n        )\n\n    return\
+          \ (\n        \"<!-- ROUTE: \"\n        \"rule_domain=chapter_review | \"\
+          \n        f\"object_scope={identity['object_scope']} | \"\n        f\"document_role={identity['document_role']}\
+          \ | \"\n        f\"rule_kind={identity['rule_kind']} | \"\n        f\"part={identity['part']}\
+          \ | \"\n        f\"section_number={identity['section_number']} | \"\n  \
+          \      f\"section_title={identity['section_title']} | \"\n        \"rule_status=active\
+          \ -->\"\n    )\n\n\ndef _inject_route_comments(prepared: str, identity:\
+          \ dict) -> str:\n    \"\"\"给每个语义子块增加隐藏路由标签，提高规则域/对象/章节的召回区分度。\"\"\"\n  \
+          \  comment = _route_comment(identity)\n    blocks = [b.strip() for b in\
+          \ re.split(r\"\\n{2,}\", prepared or \"\") if b.strip()]\n    return \"\\\
+          n\\n\".join(f\"{comment}\\n{block}\" for block in blocks).rstrip() + \"\\\
+          n\"\n\n\ndef _safe_filename_piece(value: str) -> str:\n    value = (value\
+          \ or \"\").strip()\n    value = value.replace(\"/\", \"、\").replace(\"\\\
+          \\\", \"、\")\n    value = re.sub(r'[:*?\"<>|]', \"＿\", value)\n    return\
+          \ value.strip()\n\n\ndef _filename_section_number(number: str) -> str:\n\
+          \    number = (number or \"\").strip()\n    if not number:\n        return\
+          \ \"\"\n    parts = number.split(\".\")\n    if all(part.isdigit() for part\
+          \ in parts):\n        return \".\".join(part.zfill(2) for part in parts)\n\
+          \    return number\n\n\ndef _canonical_document_name(identity: dict) ->\
+          \ str:\n    if identity[\"rule_domain\"] == \"basic_check\":\n        code\
+          \ = _safe_filename_piece(identity[\"rule_code\"])\n        numeric = re.sub(r\"\
+          ^[A-Za-z]+\", \"\", code)\n        number = numeric.zfill(2) if numeric.isdigit()\
+          \ else code\n        title = _safe_filename_piece(identity[\"rule_title\"\
+          ])\n        if identity[\"rule_code\"] == \"B00\":\n            title =\
+          \ \"基础规则索引\"\n        return f\"技术规范书—基础检查—{number}{title}—审查规则.md\"\n\n\
+          \    object_scope = _safe_filename_piece(identity[\"object_scope\"])\n \
+          \   if identity[\"rule_kind\"] == \"structure\":\n        return f\"{object_scope}—00全文章节结构—审查规则.md\"\
+          \n\n    part = _safe_filename_piece(identity[\"part\"])\n    section_number\
+          \ = _filename_section_number(identity[\"section_number\"])\n    section_title\
+          \ = _safe_filename_piece(identity[\"section_title\"])\n    return f\"{object_scope}—{part}—{section_number}{section_title}—审查规则.md\"\
+          \n\n\ndef main(text: str) -> dict:\n    text = text or \"\"\n\n    # 防止\
+          \ Skill、约定说明、预检报告等参考文件误入正式规则库。\n    status_pattern = r\"(?m)^(\\s*[-*+]\\\
+          s*规则状态\\s*[：:]\\s*).*$\"\n    if not re.search(status_pattern, text):\n\
+          \        raise ValueError(\"未检测到“规则状态”字段：该文件疑似不是正式审查规则，已拒绝入库。\")\n\n   \
+          \ # 1. 手工上传正式知识库即视为已核准发布，统一激活。\n    text = re.sub(status_pattern, lambda\
+          \ m: m.group(1) + \"active\", text)\n\n    # 2. 删除核准提示字样。\n    text = text.replace(\"\
+          （核准后使用）\", \"\").replace(\"(核准后使用)\", \"\")\n\n    # 3. 删除“来源追溯”章节及其内容。\n\
+          \    text = _remove_source_trace_section(text)\n\n    # 4. 建立并规范运行期身份字段。\n\
+          \    identity = _derive_identity(text)\n    text = _ensure_identity_fields(text,\
+          \ identity)\n\n    # PostgreSQL Rule Registry 保存完整、清洗后的权威正文。\n    registry_content\
+          \ = text.strip() + \"\\n\"\n    document_name = _canonical_document_name(identity)\n\
+          \n    # 5. 章节结构规则使用结构专用分块；其余规则使用通用语义分块。\n    if (\n        identity[\"rule_domain\"\
+          ] == \"chapter_review\"\n        and (\n            identity[\"rule_kind\"\
+          ] == \"structure\"\n            or _is_structure_rule(text)\n        )\n\
+          \    ):\n        prepared = _prepare_structure_rule_chunks(text)\n    else:\n\
+          \        prepared = _prepare_normal_rule_chunks(text)\n\n    # 6. 仅给 Dify\
+          \ 向量索引文本增加隐藏机器路由标签。\n    cleaned = _inject_route_comments(prepared, identity)\n\
+          \n    # 入库前终检。\n    if \"（核准后使用）\" in cleaned or \"(核准后使用)\" in cleaned:\n\
+          \        raise ValueError(\"清洗失败：仍存在“核准后使用”字样。\")\n    if re.search(r\"\
+          (?m)^#{1,6}\\s*来源追溯\\s*$\", cleaned):\n        raise ValueError(\"清洗失败：仍存在“来源追溯”章节。\"\
+          )\n    if not re.search(\n        r\"(?m)^\\s*[-*+]\\s*规则状态\\s*[：:]\\s*active\\\
+          s*$\",\n        cleaned,\n    ):\n        raise ValueError(\"清洗失败：规则状态未统一为\
+          \ active。\")\n\n    if identity[\"rule_domain\"] == \"basic_check\":\n \
+          \       for field in (\n            \"规则域\",\n            \"文档角色\",\n  \
+          \          \"规则编号\",\n            \"规则标题\",\n            \"规则类型\",\n   \
+          \         \"适用阶段\",\n            \"作用层级\",\n        ):\n            if not\
+          \ re.search(\n                rf\"(?m)^\\s*[-*+]\\s*{re.escape(field)}\\\
+          s*[：:]\\s*\\S\",\n                cleaned,\n            ):\n           \
+          \     raise ValueError(f\"清洗失败：缺少基础规则身份字段“{field}”。\")\n    else:\n    \
+          \    for field in (\n            \"对象范围\",\n            \"文档角色\",\n    \
+          \        \"所属部分\",\n            \"章节编号\",\n            \"章节标题\",\n     \
+          \       \"规则类型\",\n        ):\n            if not re.search(\n         \
+          \       rf\"(?m)^\\s*[-*+]\\s*{re.escape(field)}\\s*[：:]\\s*\\S\",\n   \
+          \             cleaned,\n            ):\n                raise ValueError(f\"\
+          清洗失败：缺少章节规则身份字段“{field}”。\")\n\n    return {\n        \"cleaned_text\":\
+          \ cleaned,\n        \"registry_content\": registry_content,\n        \"\
+          document_name\": document_name,\n        \"rule_domain\": identity[\"rule_domain\"\
+          ],\n        \"object_scope\": identity[\"object_scope\"],\n        \"document_role\"\
+          : identity[\"document_role\"],\n        \"part\": identity[\"part\"],\n\
+          \        \"section_number\": identity[\"section_number\"],\n        \"section_title\"\
+          : identity[\"section_title\"],\n        \"rule_kind\": identity[\"rule_kind\"\
+          ],\n        \"scope_level\": identity[\"scope_level\"],\n        \"stage\"\
+          : identity[\"stage\"],\n        \"rule_code\": identity[\"rule_code\"],\n\
+          \        \"rule_title\": identity[\"rule_title\"],\n    }\n"
+        code_language: python3
+        desc: 同时支持章节规则与基础检查规则。清洗后输出 PostgreSQL 权威完整正文，并为 Dify 向量索引注入 rule_domain 路由标签。
+        outputs:
+          cleaned_text:
+            children: null
+            type: string
+          document_name:
+            children: null
+            type: string
+          document_role:
+            children: null
+            type: string
+          object_scope:
+            children: null
+            type: string
+          part:
+            children: null
+            type: string
+          registry_content:
+            children: null
+            type: string
+          rule_code:
+            children: null
+            type: string
+          rule_domain:
+            children: null
+            type: string
+          rule_kind:
+            children: null
+            type: string
+          rule_title:
+            children: null
+            type: string
+          scope_level:
+            children: null
+            type: string
+          section_number:
+            children: null
+            type: string
+          section_title:
+            children: null
+            type: string
+          stage:
+            children: null
+            type: string
+        selected: false
+        title: 规则清洗 + 双规则域身份 + Registry正文 + 语义分块
+        type: code
+        variables:
+        - value_selector:
+          - extract_markdown
+          - text
+          variable: text
+      height: 127
+      id: clean_rule
+      position:
+        x: -80
+        y: 260
+      positionAbsolute:
+        x: -80
+        y: 260
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        is_team_authorization: true
+        output_schema:
+          properties:
+            result:
+              description: Parent child chunks result
+              items:
+                type: object
+              type: array
+          type: object
+        paramSchemas:
+        - auto_generate: null
+          default: null
+          form: llm
+          human_description:
+            en_US: The text you want to chunk.
+            ja_JP: The text you want to chunk.
+            pt_BR: The text you want to chunk.
+            zh_Hans: 输入文本
+          label:
+            en_US: 输入文本
+            ja_JP: 输入文本
+            pt_BR: 输入文本
+            zh_Hans: 输入文本
+          llm_description: The text you want to chunk.
+          max: null
+          min: null
+          name: input_text
+          options: []
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: 1024
+          form: llm
+          human_description:
+            en_US: Maximum length for chunking
+            ja_JP: Maximum length for chunking
+            pt_BR: Maximum length for chunking
+            zh_Hans: 父块最大长度
+          label:
+            en_US: 父块最大长度
+            ja_JP: 父块最大长度
+            pt_BR: 父块最大长度
+            zh_Hans: 父块最大长度
+          llm_description: Maximum length for chunking
+          max: null
+          min: null
+          name: max_length
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: number
+        - auto_generate: null
+          default: '
+
+
+            '
+          form: llm
+          human_description:
+            en_US: Separator used for chunking
+            ja_JP: Separator used for chunking
+            pt_BR: Separator used for chunking
+            zh_Hans: 父块分隔符
+          label:
+            en_US: 父块分隔符
+            ja_JP: 父块分隔符
+            pt_BR: 父块分隔符
+            zh_Hans: 父块分隔符
+          llm_description: Separator used for chunking
+          max: null
+          min: null
+          name: separator
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: 1600
+          form: llm
+          human_description:
+            en_US: Maximum length for subchunking
+            ja_JP: Maximum length for subchunking
+            pt_BR: Maximum length for subchunking
+            zh_Hans: 子块最大长度
+          label:
+            en_US: 子块最大长度
+            ja_JP: 子块最大长度
+            pt_BR: 子块最大长度
+            zh_Hans: 子块最大长度
+          llm_description: Maximum length for subchunking
+          max: null
+          min: null
+          name: subchunk_max_length
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: number
+        - auto_generate: null
+          default: '
+
+
+            '
+          form: llm
+          human_description:
+            en_US: Separator used for subchunking
+            ja_JP: Separator used for subchunking
+            pt_BR: Separator used for subchunking
+            zh_Hans: 子块分隔符
+          label:
+            en_US: 子块分隔符
+            ja_JP: 子块分隔符
+            pt_BR: 子块分隔符
+            zh_Hans: 子块分隔符
+          llm_description: Separator used for subchunking
+          max: null
+          min: null
+          name: subchunk_separator
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: full_doc
+          form: llm
+          human_description:
+            en_US: Use the entire document as parent block when full_doc is selected.
+            ja_JP: Use the entire document as parent block when full_doc is selected.
+            pt_BR: Use the entire document as parent block when full_doc is selected.
+            zh_Hans: 父块模式
+          label:
+            en_US: 父块模式
+            ja_JP: 父块模式
+            pt_BR: 父块模式
+            zh_Hans: 父块模式
+          llm_description: Use the entire document as parent block when full_doc is
+            selected.
+          max: null
+          min: null
+          name: parent_mode
+          options:
+          - icon: ''
+            label:
+              en_US: Paragraph
+              ja_JP: 段落
+              pt_BR: Parágrafo
+              zh_Hans: 段落
+            value: paragraph
+          - icon: ''
+            label:
+              en_US: Full Document
+              ja_JP: 全文
+              pt_BR: Documento Completo
+              zh_Hans: 全文
+            value: full_doc
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: select
+        - auto_generate: null
+          default: false
+          form: llm
+          human_description:
+            en_US: Whether to remove extra spaces in the text
+            ja_JP: Whether to remove extra spaces in the text
+            pt_BR: Whether to remove extra spaces in the text
+            zh_Hans: 移除多余空格
+          label:
+            en_US: 移除多余空格
+            ja_JP: 移除多余空格
+            pt_BR: 移除多余空格
+            zh_Hans: 移除多余空格
+          llm_description: Whether to remove extra spaces in the text
+          max: null
+          min: null
+          name: remove_extra_spaces
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: boolean
+        - auto_generate: null
+          default: false
+          form: llm
+          human_description:
+            en_US: Whether to remove URLs and emails in the text
+            ja_JP: Whether to remove URLs and emails in the text
+            pt_BR: Whether to remove URLs and emails in the text
+            zh_Hans: 移除 URL 和邮箱
+          label:
+            en_US: 移除 URL 和邮箱
+            ja_JP: 移除 URL 和邮箱
+            pt_BR: 移除 URL 和邮箱
+            zh_Hans: 移除 URL 和邮箱
+          llm_description: Whether to remove URLs and emails in the text
+          max: null
+          min: null
+          name: remove_urls_emails
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: boolean
+        params:
+          input_text: ''
+          max_length: ''
+          parent_mode: ''
+          remove_extra_spaces: ''
+          remove_urls_emails: ''
+          separator: ''
+          subchunk_max_length: ''
+          subchunk_separator: ''
+        provider_id: langgenius/parentchild_chunker/parentchild_chunker
+        provider_name: langgenius/parentchild_chunker/parentchild_chunker
+        provider_type: builtin
+        selected: false
+        title: 父子分块（全文父块 + 双策略语义子块）
+        tool_configurations: {}
+        tool_description: Parent-child Chunk Structure
+        tool_label: Parent-child Chunker
+        tool_name: parentchild_chunker
+        tool_node_version: '2'
+        tool_parameters:
+          input_text:
+            type: mixed
+            value: '{{#clean_rule.cleaned_text#}}'
+          max_length:
+            type: constant
+            value: 1024
+          parent_mode:
+            type: constant
+            value: full_doc
+          remove_extra_spaces:
+            type: constant
+            value: false
+          remove_urls_emails:
+            type: constant
+            value: false
+          separator:
+            type: constant
+            value: '
+
+
+              '
+          subchunk_max_length:
+            type: constant
+            value: 1600
+          subchunk_separator:
+            type: constant
+            value: '
+
+
+              '
+        type: tool
+      height: 51
+      id: parent_child_chunk
+      position:
+        x: 1160
+        y: 260
+      positionAbsolute:
+        x: 1160
+        y: 260
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        chunk_structure: hierarchical_model
+        embedding_model: '@cf/qwen/qwen3-embedding-0.6b'
+        embedding_model_provider: langgenius/openai_api_compatible/openai_api_compatible
+        index_chunk_variable_selector:
+        - parent_child_chunk
+        - result
+        indexing_technique: high_quality
+        keyword_number: 10
+        retrieval_model:
+          reranking_enable: true
+          reranking_mode: reranking_model
+          reranking_model:
+            reranking_model_name: '@cf/baai/bge-reranker-base'
+            reranking_provider_name: langgenius/openai_api_compatible/openai_api_compatible
+          score_threshold: 0.5
+          score_threshold_enabled: false
+          search_method: hybrid_search
+          top_k: 6
+          weights: null
+        selected: false
+        summary_index_setting: null
+        title: 审查规则知识库索引
+        type: knowledge-index
+      height: 165
+      id: knowledge_index
+      position:
+        x: 1470
+        y: 260
+      positionAbsolute:
+        x: 1470
+        y: 260
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        code: "import json\n\n\ndef main(\n    document_name: str,\n    rule_domain:\
+          \ str,\n    object_scope: str,\n    document_role: str,\n    part: str,\n\
+          \    section_number: str,\n    section_title: str,\n    rule_kind: str,\n\
+          \    scope_level: str,\n    stage: str,\n    rule_code: str,\n    rule_title:\
+          \ str,\n    registry_content: str,\n) -> dict:\n    rule_domain = (rule_domain\
+          \ or \"\").strip()\n\n    if rule_domain == \"basic_check\":\n        payload\
+          \ = {\n            \"document_name\": document_name,\n            \"document_role\"\
+          : document_role,\n            \"scope_level\": scope_level,\n          \
+          \  \"object_scope\": object_scope or None,\n            \"stage\": stage,\n\
+          \            \"rule_code\": rule_code,\n            \"rule_title\": rule_title,\n\
+          \            \"rule_kind\": rule_kind,\n            \"content\": registry_content,\n\
+          \            \"source\": \"dify_pipeline\",\n        }\n        publish_url\
+          \ = (\n            \"http://host.docker.internal:8010/v1/basic-rules/publish\"\
+          \n        )\n    elif rule_domain == \"chapter_review\":\n        payload\
+          \ = {\n            \"document_name\": document_name,\n            \"object_scope\"\
+          : object_scope,\n            \"document_role\": document_role,\n       \
+          \     \"part\": part,\n            \"section_number\": section_number,\n\
+          \            \"section_title\": section_title,\n            \"rule_kind\"\
+          : rule_kind,\n            \"content\": registry_content,\n            \"\
+          source\": \"dify_pipeline\",\n        }\n        publish_url = (\n     \
+          \       \"http://host.docker.internal:8010/v1/rules/publish\"\n        )\n\
+          \    else:\n        raise ValueError(f\"未知 rule_domain：{rule_domain}\")\n\
+          \n    return {\n        \"payload\": json.dumps(payload, ensure_ascii=False),\n\
+          \        \"publish_url\": publish_url,\n    }\n"
+        code_language: python3
+        desc: 按 rule_domain 自动生成章节规则或基础检查规则的 PostgreSQL 发布载荷与目标 URL。
+        outputs:
+          payload:
+            children: null
+            type: string
+          publish_url:
+            children: null
+            type: string
+        selected: false
+        title: 生成 PostgreSQL 双规则域发布载荷
+        type: code
+        variables:
+        - value_selector:
+          - clean_rule
+          - document_name
+          variable: document_name
+        - value_selector:
+          - clean_rule
+          - rule_domain
+          variable: rule_domain
+        - value_selector:
+          - clean_rule
+          - object_scope
+          variable: object_scope
+        - value_selector:
+          - clean_rule
+          - document_role
+          variable: document_role
+        - value_selector:
+          - clean_rule
+          - part
+          variable: part
+        - value_selector:
+          - clean_rule
+          - section_number
+          variable: section_number
+        - value_selector:
+          - clean_rule
+          - section_title
+          variable: section_title
+        - value_selector:
+          - clean_rule
+          - rule_kind
+          variable: rule_kind
+        - value_selector:
+          - clean_rule
+          - scope_level
+          variable: scope_level
+        - value_selector:
+          - clean_rule
+          - stage
+          variable: stage
+        - value_selector:
+          - clean_rule
+          - rule_code
+          variable: rule_code
+        - value_selector:
+          - clean_rule
+          - rule_title
+          variable: rule_title
+        - value_selector:
+          - clean_rule
+          - registry_content
+          variable: registry_content
+      height: 111
+      id: build_registry_payload
+      position:
+        x: 230
+        y: 260
+      positionAbsolute:
+        x: 230
+        y: 260
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - id: key-value-rule-registry-payload
+            key: ''
+            type: text
+            value: '{{#build_registry_payload.payload#}}'
+          type: json
+        desc: 按规则域自动发布到 /v1/rules/publish 或 /v1/basic-rules/publish；同正文由服务端按 Hash
+          幂等去重，正文变化自动生成新版本。
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 2
+          retry_enabled: true
+          retry_interval: 500
+        selected: false
+        ssl_verify: true
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 30
+          max_write_timeout: 30
+        title: 发布到 PostgreSQL Rule Registry（自动路由）
+        type: http-request
+        url: '{{#build_registry_payload.publish_url#}}'
+        variables: []
+      height: 199
+      id: publish_registry
+      position:
+        x: 540
+        y: 260
+      positionAbsolute:
+        x: 540
+        y: 260
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        code: "import json\n\n\ndef main(status_code, body: str) -> dict:\n    try:\n\
+          \        code = int(status_code)\n    except Exception:\n        raise ValueError(f\"\
+          Rule Registry 返回了无效 HTTP 状态码：{status_code}\")\n\n    if code < 200 or code\
+          \ >= 300:\n        raise ValueError(\n            f\"Rule Registry 发布失败：HTTP\
+          \ {code}；响应：{body}\"\n        )\n\n    try:\n        result = json.loads(body\
+          \ or \"{}\")\n    except Exception as exc:\n        raise ValueError(\n\
+          \            f\"Rule Registry 响应不是合法 JSON：{body}\"\n        ) from exc\n\
+          \n    if result.get(\"success\") is not True:\n        raise ValueError(\n\
+          \            f\"Rule Registry 未确认发布成功：{body}\"\n        )\n\n    action\
+          \ = str(result.get(\"action\") or \"\")\n    if action not in {\"published\"\
+          , \"unchanged\"}:\n        raise ValueError(\n            f\"Rule Registry\
+          \ 返回未知发布动作：{action}\"\n        )\n\n    return {\n        \"publish_action\"\
+          : action,\n        \"rule_id\": str(result.get(\"rule_id\") or \"\"),\n\
+          \        \"version\": str(result.get(\"version\") or \"\"),\n    }\n"
+        code_language: python3
+        desc: 章节规则/基础规则只有 PostgreSQL 发布成功后，才继续 Dify 父子分块与知识库索引。
+        outputs:
+          publish_action:
+            children: null
+            type: string
+          rule_id:
+            children: null
+            type: string
+          version:
+            children: null
+            type: string
+        selected: false
+        title: 校验 Rule Registry 发布结果
+        type: code
+        variables:
+        - value_selector:
+          - publish_registry
+          - status_code
+          variable: status_code
+        - value_selector:
+          - publish_registry
+          - body
+          variable: body
+      height: 111
+      id: validate_registry_publish
+      position:
+        x: 850
+        y: 260
+      positionAbsolute:
+        x: 850
+        y: 260
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    viewport:
+      x: -701.5199999999999
+      y: 100.90000000000003
+      zoom: 0.72
+  rag_pipeline_variables: []

@@ -1,0 +1,8 @@
+# 运行时数据（数据库、日志、pid）
+data/
+# 本机配置与密钥
+.env
+# Python
+__pycache__/
+*.pyc
+.venv/
